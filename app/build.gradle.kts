@@ -11,8 +11,8 @@ android {
         applicationId = "com.unified.ytaudio"
         minSdk = 26
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.6-Elite"
+        versionCode = 7
+        versionName = "1.7-Architect"
     }
     buildFeatures { compose = true }
     compileOptions {
