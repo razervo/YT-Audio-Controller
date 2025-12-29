@@ -2,146 +2,127 @@ package com.unified.ytaudio
 
 import android.content.*
 import android.net.Uri
-import android.os.Bundle
+import android.os.*
 import android.provider.Settings
+import android.webkit.*
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.*
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import kotlinx.coroutines.delay
+import java.io.File
 
 class MainActivity : ComponentActivity() {
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    UnifiedAppContainer { path, args -> executeTermux(path, args) }
-                }
-            }
-        }
+    private var sharedUrl = mutableStateOf("")
+    override fun onCreate(s: Bundle?) {
+        super.onCreate(s)
+        if (intent?.action == Intent.ACTION_SEND) sharedUrl.value = intent.getStringExtra(Intent.EXTRA_TEXT) ?: ""
+        val p = getSharedPreferences("yt_elite_v1.6", MODE_PRIVATE)
+        setContent { MaterialTheme(colorScheme = darkColorScheme()) { Surface { EliteUI(p, sharedUrl.value) } } }
     }
-
-    private fun executeTermux(path: String, args: Array<String>) {
-        val intent = Intent().apply {
-            action = "com.termux.RUN_COMMAND"
+    fun callTermux(p: String, a: Array<String>, isBg: Boolean, sid: String) {
+        val i = Intent("com.termux.RUN_COMMAND").apply {
             component = ComponentName("com.termux", "com.termux.app.RunCommandService")
-            putExtra("com.termux.RUN_COMMAND_PATH", path)
-            putExtra("com.termux.RUN_COMMAND_ARGUMENTS", args)
-            putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0")
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra("com.termux.RUN_COMMAND_PATH", p); putExtra("com.termux.RUN_COMMAND_ARGUMENTS", a)
+            putExtra("com.termux.RUN_COMMAND_SESSION_ACTION", "0"); putExtra("com.termux.RUN_COMMAND_BACKGROUND", isBg)
+            putExtra("com.termux.RUN_COMMAND_SESSION_ID", sid); addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        try {
-            startService(intent)
-        } catch (e: Exception) {
-            Toast.makeText(this, "Bridge Error: Check Permissions", Toast.LENGTH_LONG).show()
-        }
+        val pi = android.app.PendingIntent.getService(this, System.currentTimeMillis().toInt(), i, android.app.PendingIntent.FLAG_IMMUTABLE)
+        try { pi.send() } catch (e: Exception) { }
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UnifiedAppContainer(onRun: (String, Array<String>) -> Unit) {
-    var ytUrl by remember { mutableStateOf("") }
-    var showHelp by remember { mutableStateOf(false) }
-    val context = LocalContext.current
-    val clipboard = LocalClipboardManager.current
-    val scroll = rememberScrollState()
+fun EliteUI(prefs: SharedPreferences, sUrl: String) {
+    val ctx = LocalContext.current as MainActivity
+    var step by remember { mutableStateOf(prefs.getInt("step", 1)) }
+    var done by remember { mutableStateOf(prefs.getBoolean("done", false)) }
+    var url by remember { mutableStateOf(sUrl) }
+    var progress by remember { mutableStateOf(0f) }
+    var showLogin by remember { mutableStateOf(false) }
+    val d = '$'
 
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = { Text("YT Audio Pro 2025", fontWeight = FontWeight.Bold) },
-                actions = {
-                    IconButton(onClick = { showHelp = true }) {
-                        Icon(Icons.Default.Info, contentDescription = "Help")
-                    }
-                }
-            )
-        }
-    ) { padding ->
-        Column(modifier = Modifier.padding(padding).padding(20.dp).verticalScroll(scroll)) {
-            
-            // SECTION 1: INSTALLATION
-            Text("1. Installation", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Button(onClick = {
-                val i = Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/en/packages/com.termux/"))
-                context.startActivity(i)
-            }, modifier = Modifier.fillMaxWidth()) { Text("Download Termux (F-Droid)") }
-            
-            Spacer(Modifier.height(16.dp))
-
-            // SECTION 2: PERMISSIONS
-            Text("2. System Permissions", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Text("These are mandatory for the bridge to work:", fontSize = 12.sp)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                TextButton(onClick = { 
-                    context.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:com.termux"))) 
-                }) { Text("1. Appear on Top") }
-                TextButton(onClick = { 
-                    context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) 
-                }) { Text("2. Battery Fix") }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // SECTION 3: ENGINE SETUP
-            Text("3. Engine Setup", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-            Button(onClick = {
-                val master = """
-                    pkg update && pkg upgrade -y && pkg install python ffmpeg -y && pip install yt-dlp && mkdir -p ~/bin && mkdir -p ~/.termux && echo "allow-external-apps=true" > ~/.termux/termux.properties && termux-reload-settings && termux-setup-storage && cat << 'EOF' > ~/bin/yt-audio
-                    #!/bin/bash
-                    yt-dlp -x --audio-format mp3 --restrict-filenames -o "/sdcard/Download/YT-Audio/%(title)s.%(ext)s" "${'$'}1"
-                    EOF
-                    chmod +x ~/bin/yt-audio
-                """.trimIndent()
-                clipboard.setText(AnnotatedString(master))
-                Toast.makeText(context, "Master Command Copied!", Toast.LENGTH_SHORT).show()
-            }, modifier = Modifier.fillMaxWidth()) { Text("Copy Master Setup Command") }
-            
-            Spacer(Modifier.height(24.dp))
-
-            // SECTION 4: DOWNLOADER
-            Text("4. Downloader", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, fontSize = 20.sp)
-            OutlinedTextField(
-                value = ytUrl,
-                onValueChange = { ytUrl = it },
-                label = { Text("Paste YouTube Link") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(12.dp))
-            Button(
-                onClick = { onRun("/data/data/com.termux/files/home/bin/yt-audio", arrayOf(ytUrl)) },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                enabled = ytUrl.isNotBlank()
-            ) {
-                Text("DOWNLOAD MP3", fontWeight = FontWeight.Bold)
-            }
-        }
-
-        if (showHelp) {
-            AlertDialog(
-                onDismissRequest = { showHelp = false },
-                title = { Text("How to fix Bridge Failed") },
-                text = {
-                    Text("1. Click 'Appear on Top' and enable it for Termux.\n\n2. Click 'Copy Master Command' and paste it into Termux.\n\n3. Type 'exit' in Termux to close it, then swipe it away from your Recent Apps to restart it.")
-                },
-                confirmButton = { TextButton(onClick = { showHelp = false }) { Text("Close") } }
-            )
+    LaunchedEffect(done) {
+        while (done) {
+            try {
+                val f = File("/sdcard/Download/YT-Audio/.progress")
+                if (f.exists()) {
+                    progress = (f.readText().replace(Regex("[^0-9.]"), "").toFloatOrNull() ?: 0f) / 100f
+                } else if (progress > 0.9f) progress = 0f
+            } catch (e: Exception) { }
+            delay(500)
         }
     }
+
+    if (showLogin) {
+        Box(Modifier.fillMaxSize()) {
+            AndroidView(factory = { c ->
+                WebView(c).apply {
+                    // DESKTOP SIMULATION SETTINGS
+                    val desktopUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                    settings.userAgentString = desktopUA
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(v: WebView?, u: String?) {
+                            val cks = CookieManager.getInstance().getCookie(u)
+                            if (cks != null && cks.contains("SID=")) {
+                                prefs.edit().putString("cks", cks).apply()
+                            }
+                        }
+                    }
+                    loadUrl("https://accounts.google.com/ServiceLogin?service=youtube")
+                }
+            }, modifier = Modifier.fillMaxSize())
+            
+            Button(
+                onClick = { showLogin = false; step = 5; prefs.edit().putInt("step", 5).apply() },
+                modifier = Modifier.align(Alignment.BottomCenter).padding(20.dp)
+            ) { Text("Identity Verified: Click to Continue") }
+        }
+    } else {
+        Scaffold(topBar = { CenterAlignedTopAppBar(title = { Text("YT Audio Elite", fontWeight = FontWeight.Bold) }) }) { p ->
+            Column(Modifier.padding(p).padding(16.dp)) {
+                if (!done) {
+                    Column {
+                        Text("Step $step of 5", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        when(step) {
+                            1 -> Wizard("Foundation", "Install Termux.", "Download") { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://f-droid.org/en/packages/com.termux/"))); step = 2 }
+                            2 -> Wizard("Bridge", "Allow Overlay and Files Access.", "Settings") { ctx.startActivity(Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)) ; step = 3 }
+                            3 -> Wizard("Security", "Permissions > 3 Dots > Additional > Allow Run Commands.", "App Info") { ctx.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply { data = Uri.parse("package:${ctx.packageName}") }); step = 4 }
+                            4 -> Wizard("Identity", "Sign in as a Desktop PC to fix speed.", "Sign In") { showLogin = true }
+                            5 -> Wizard("Finalize", "Configure Blueprint folders.", "Initialize") {
+                                val cks = prefs.getString("cks", "")
+                                val s = "pkg update -y && pkg install python ffmpeg deno -y && pip install yt-dlp && mkdir -p ~/bin && termux-setup-storage && echo -e '#!/bin/bash\\nyt-dlp -x --audio-format mp3 --restrict-filenames --extractor-args \"youtube:player-client=android\" --add-header \"Cookie: ${cks}\" --newline --progress-template \"%(progress._percent_str)s\" -o \"/sdcard/Download/YT-Audio/%(playlist_title?Playlist/%(playlist_title)s/|Single/)s%(playlist_index?%(playlist_index)s - |)s%(artist,uploader|Unknown)s - %(title)s.%(ext)s\" \"${d}1\" > /sdcard/Download/YT-Audio/.progress 2>&1\\nrm /sdcard/Download/YT-Audio/.progress' > /data/data/com.termux/files/home/bin/yt-audio && chmod +x /data/data/com.termux/files/home/bin/yt-audio"
+                                ctx.callTermux("/system/bin/sh", arrayOf("-c", s), false, "SETUP")
+                                done = true; prefs.edit().putBoolean("done", true).apply()
+                            }
+                        }
+                        if (step < 5) Button(onClick = { step++ }, modifier = Modifier.align(Alignment.End)) { Text("Next") }
+                    }
+                } else {
+                    OutlinedTextField(value = url, onValueChange = { url = it }, label = { Text("URL") }, modifier = Modifier.fillMaxWidth())
+                    if (progress > 0f) LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp), color = Color.Red)
+                    Button(onClick = { ctx.callTermux("/data/data/com.termux/files/home/bin/yt-audio", arrayOf(url), true, "DL_${System.currentTimeMillis()}") }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(56.dp)) { Text("DOWNLOAD MP3") }
+                    TextButton(onClick = { prefs.edit().clear().apply(); done = false; step = 1 }) { Text("Reset Application") }
+                }
+            }
+        }
+    }
+}
+@Composable fun Wizard(t: String, d: String, b: String, onClick: () -> Unit) {
+    Text(t, fontSize = 20.sp, fontWeight = FontWeight.Bold); Text(d, modifier = Modifier.padding(vertical = 10.dp))
+    Button(onClick = onClick, modifier = Modifier.fillMaxWidth()) { Text(b) }
 }
