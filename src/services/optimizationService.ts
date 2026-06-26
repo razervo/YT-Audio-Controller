@@ -1,10 +1,10 @@
 import type { Shipment } from '../types';
 
 export function optimizeRoute(shipments: Shipment[]): Shipment[] {
-  // Sort logic:
+  // Sort logic Phase 2:
   // 1. Priority shipments first
   // 2. Group by Area
-  // 3. Preserve original order within groups (as it reflects top-to-bottom extraction)
+  // 3. Nearest sequence inside each area (simulated by preserve order or alphabetical sub-area for now)
 
   return [...shipments].sort((a, b) => {
     // Priority first
@@ -12,23 +12,26 @@ export function optimizeRoute(shipments: Shipment[]): Shipment[] {
     if (!a.priority && b.priority) return 1;
 
     // Group by Area
-    const areaA = a.area || '';
-    const areaB = b.area || '';
-    if (areaA < areaB) return -1;
-    if (areaA > areaB) return 1;
+    if (a.area !== b.area) {
+      return a.area.localeCompare(b.area);
+    }
 
-    // Preserve original order
+    // Preserve top-to-bottom extraction order
     return a.order - b.order;
   });
 }
 
-export function groupShipmentsByArea(shipments: Shipment[]): Record<string, Shipment[]> {
-  return shipments.reduce((groups, shipment) => {
-    const area = shipment.area || 'Unknown';
-    if (!groups[area]) {
-      groups[area] = [];
-    }
-    groups[area].push(shipment);
-    return groups;
-  }, {} as Record<string, Shipment[]>);
+export function calculateStats(shipments: Shipment[]): any {
+  const areas = new Set(shipments.map(s => s.area));
+  const completed = shipments.filter(s => s.status === 'Delivered').length;
+
+  return {
+    total: shipments.length,
+    priority: shipments.filter(s => s.priority).length,
+    completed: completed,
+    remaining: shipments.length - completed,
+    areas: areas.size,
+    estimatedTime: `${shipments.length * 5} min`, // Simple heuristic
+    estimatedDistance: `${shipments.length * 0.8} km`
+  };
 }

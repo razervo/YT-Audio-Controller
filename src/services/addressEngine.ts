@@ -3,15 +3,20 @@ import fuzzysort from 'fuzzysort';
 const INITIAL_LOCALITIES = [
   'Doboka',
   'Niz Doboka',
-  'Kodoba',
-  'Islampur',
   'Doboka Bypass',
+  'Kordoba',
+  'Kodoba',
   'College Road',
   'Masjid Road',
   'Lumding Road',
   'Diphu Road',
+  'Islampur',
+  'SBI Doboka',
+  'NH54',
   'Hojai',
-  'Nagaon'
+  'Nagaon',
+  'Jamunamukh',
+  'Lanka'
 ];
 
 export class AddressEngine {
@@ -25,44 +30,50 @@ export class AddressEngine {
   }
 
   private loadLearnedLocalities() {
-    const stored = localStorage.getItem('learned_localities');
+    const stored = localStorage.getItem('learned_localities_v2');
     if (stored) {
-      const parsed = JSON.parse(stored);
-      parsed.forEach((l: string) => this.localities.add(l));
+      try {
+        const parsed = JSON.parse(stored);
+        parsed.forEach((l: string) => this.localities.add(l));
+      } catch (e) {
+        console.error('Failed to parse learned localities');
+      }
     }
   }
 
   private saveLocalities() {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('learned_localities', JSON.stringify(Array.from(this.localities)));
+      localStorage.setItem('learned_localities_v2', JSON.stringify(Array.from(this.localities)));
     }
   }
 
-  public recognizeArea(address: string): string | null {
-    const normalizedAddr = address.toLowerCase();
+  public recognizeArea(address: string, landmark: string = ''): string {
+    const combined = `${address} ${landmark}`.toLowerCase();
 
-    // Sort localities by length descending so "Niz Doboka" is matched before "Doboka"
+    // Exact match first (longest first)
     const sortedLocalities = Array.from(this.localities).sort((a, b) => b.length - a.length);
 
     for (const locality of sortedLocalities) {
-      if (normalizedAddr.includes(locality.toLowerCase())) {
+      if (combined.includes(locality.toLowerCase())) {
         return locality;
       }
     }
 
-    const results = fuzzysort.go(address, sortedLocalities, {
+    // Fuzzy match
+    const results = fuzzysort.go(combined, sortedLocalities, {
       limit: 1,
+      threshold: -500,
     });
 
-    if (results.length > 0 && results[0].score > -1000) {
+    if (results.length > 0) {
       return results[0].target;
     }
 
-    return null;
+    return 'Other';
   }
 
   public learnLocality(locality: string) {
-    if (locality && locality.length > 3) {
+    if (locality && locality.length >= 3) {
       this.localities.add(locality);
       this.saveLocalities();
     }
