@@ -158,7 +158,7 @@ function App() {
           </div>
           <div className="flex items-center gap-1">
             <button
-              onClick={() => setView('stats')}
+              onClick={() => setView('stats')} aria-label="Statistics"
               className="p-2 hover:bg-white/10 rounded-full"
             >
               <BarChart3 className="w-5 h-5" />
@@ -444,7 +444,7 @@ function App() {
             <span className="text-[10px] font-black mt-1 uppercase tracking-widest">Route</span>
           </button>
           <button
-            onClick={() => setView('settings')}
+            onClick={() => setView('settings')} aria-label="Settings"
             className={`flex flex-col items-center justify-center w-full h-full transition-all ${view === 'settings' ? 'text-blue-600' : 'text-gray-300'}`}
           >
             <div className={`p-2 rounded-2xl ${view === 'settings' ? 'bg-blue-50' : ''}`}><SettingsIcon className="w-6 h-6" /></div>
